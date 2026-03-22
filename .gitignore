@@ -1,0 +1,34 @@
+# Visual Studio / MSBuild
+.vs/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Unreal Engine
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+*.opensdf
+*.opendb
+*.VC.db
+*.pdb
+*.obj
+*.exe
+*.dll
+*.lib
+*.app
+*.dylib
+
+# Generated project files (regenerate from .uproject)
+*.xcodeproj
+*.xcworkspace
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

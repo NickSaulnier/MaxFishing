@@ -1,0 +1,20 @@
+Water plugin + Chaos (prototype checklist)
+==========================================
+
+1) Edit → Plugins: confirm "Water" is enabled (restart editor if prompted).
+
+2) Create or open a level with a Landscape (Landscape Mode).
+
+3) Place a water body: Place Actors → Water → Water Body Lake (or River / Ocean).
+   Position it so it intersects your landscape.
+
+4) In Project Settings → Collision, you should see Water-related profiles after the
+   plugin loads. Use the Water plugin’s collision presets on the water mesh/body as
+   documented for your engine version (e.g. WaterBodyCollision / WaterMeshCollision).
+
+5) Chaos is UE5’s default rigid-body solver. This project enables physics sub-stepping
+   in Config/DefaultEngine.ini for stabler lure/line motion. Tune MaxSubsteps if needed.
+
+6) Optional gameplay test: add the Actor tag "Water" to a blocking volume or surface
+   you use for hits so UFishingRodComponent can set bLureInWater when traces hit it.
+   (Water Body actors can be tagged in the Details panel.)

@@ -1,0 +1,47 @@
+Fish AI — Blackboard + Behavior Tree (editor steps)
+===================================================
+
+C++ provides:
+- EFishAIState enum (Idle, Investigate, Bite, Flee)
+- FishBlackboard keys (FNames): FishState, LureLocation, PlayerLocation
+- AFishAIController syncs LureLocation + PlayerLocation each tick from the player pawn
+- UBTTask_FishSetState: sets the selected blackboard enum key to a chosen state
+
+In the editor:
+
+1) Content Browser → right-click → Artificial Intelligence → Blackboard.
+   Name it BB_Fish.
+
+2) Add keys:
+   - FishState — type Enum. Under Enum Type, pick EFishAIState (MaxFishing module).
+   - LureLocation — Vector.
+   - PlayerLocation — Vector.
+
+3) Create a Behavior Tree asset BT_Fish. Assign BB_Fish as its Blackboard.
+
+4) Build a simple tree, for example:
+   - Selector at root
+   - Sequence: decorator (Blackboard compare FishState == Idle) → Wait → UBTTask_FishSetState (Investigate)
+   - (Add more branches for Bite / Flee using the C++ task node)
+
+5) Drag UBTTask_FishSetState from the BT context menu (or add task → search "Fish Set State").
+   For each task node, set "Fish State Key" to the BB_Fish.FishState key and pick New State.
+
+6) Place AAIFishCharacter in the level (or subclass in BP). Select the fish → Details:
+   assign AI Controller Class = FishAIController (default from C++), and on the controller
+   set Behavior Tree Asset = BT_Fish.
+
+Note: The Behavior Tree and Blackboard are .uasset files; this repo documents the setup
+so you can author them once inside the editor.
+
+MetaSounds (reel tension)
+=========================
+
+1) Create MetaSound sources for Cast, Reel (looping), and Splash.
+
+2) On the Reel MetaSound, add an input parameter named exactly: Tension (float, 0..1).
+
+3) Assign assets to UFishingAudioComponent on the player pawn (or BP child):
+   CastSound, ReelSound, SplashSound. Use UMetaSoundSource assets as the sound objects.
+
+UFishingAudioComponent::NotifyReel pushes the "Tension" parameter each tick while reeling.
