@@ -1,8 +1,8 @@
 // Copyright MaxFishing Project
 
-#include "Fishing/FishingRodComponent.h"
-#include "Player/MaxFishingCharacter.h"
-#include "Audio/FishingAudioComponent.h"
+#include "FishingRodComponent.h"
+#include "MaxFishingCharacter.h"
+#include "FishingAudioComponent.h"
 #include "CableComponent.h"
 #include "Components/SplineComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -143,7 +143,7 @@ void UFishingRodComponent::UpdateLineVisual()
 	}
 
 #if ENABLE_DRAW_DEBUG
-	if (GetWorld() && GetOwner() && GetOwner()->IsLocallyControlled())
+	if (GetWorld() && OwnerCharacter->IsLocallyControlled())
 	{
 		DrawDebugLine(GetWorld(), GetRodTipWorldLocation(), LureWorldLocation, FColor::Cyan, false, -1.f, 0, 1.5f);
 		DrawDebugSphere(GetWorld(), LureWorldLocation, 12.f, 8, FColor::Green, false, -1.f, 0, 1.f);

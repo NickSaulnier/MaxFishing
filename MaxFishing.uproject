@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.6",
+	"EngineAssociation": "5.7",
 	"Category": "",
 	"Description": "Simple 3D fishing game prototype (UE5 + C++)",
 	"Modules": [

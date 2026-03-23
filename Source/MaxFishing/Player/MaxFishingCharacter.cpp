@@ -1,8 +1,8 @@
 // Copyright MaxFishing Project
 
-#include "Player/MaxFishingCharacter.h"
-#include "Fishing/FishingRodComponent.h"
-#include "Audio/FishingAudioComponent.h"
+#include "MaxFishingCharacter.h"
+#include "FishingRodComponent.h"
+#include "FishingAudioComponent.h"
 #include "CableComponent.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/SpringArmComponent.h"

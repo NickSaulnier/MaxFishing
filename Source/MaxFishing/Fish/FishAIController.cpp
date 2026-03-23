@@ -1,9 +1,9 @@
 // Copyright MaxFishing Project
 
-#include "Fish/FishAIController.h"
-#include "Fish/FishBlackboardKeys.h"
-#include "Player/MaxFishingCharacter.h"
-#include "Fishing/FishingRodComponent.h"
+#include "FishAIController.h"
+#include "FishBlackboardKeys.h"
+#include "MaxFishingCharacter.h"
+#include "FishingRodComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/GameplayStatics.h"
 

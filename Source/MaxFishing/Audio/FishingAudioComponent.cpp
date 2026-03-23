@@ -1,10 +1,11 @@
 // Copyright MaxFishing Project
 
-#include "Audio/FishingAudioComponent.h"
+#include "FishingAudioComponent.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "AudioParameter.h"
+#include "Templates/UnrealTemplate.h"
 
 UFishingAudioComponent::UFishingAudioComponent()
 {
@@ -82,5 +83,5 @@ void UFishingAudioComponent::ApplyReelTension(float Tension01)
 	const float Clamped = FMath::Clamp(Tension01, 0.f, 1.f);
 	TArray<FAudioParameter> Params;
 	Params.Emplace(FAudioParameter(FName(TEXT("Tension")), Clamped));
-	ReelLoopComponent->SetParameters(Params);
+	ReelLoopComponent->SetParameters(MoveTemp(Params));
 }

@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "Fish/FishTypes.h"
+#include "FishTypes.h"
 #include "BTTask_FishSetState.generated.h"
 
 UCLASS()

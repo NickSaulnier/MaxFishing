@@ -1,7 +1,7 @@
 // Copyright MaxFishing Project
 
 #include "MaxFishingGameMode.h"
-#include "Player/MaxFishingCharacter.h"
+#include "MaxFishingCharacter.h"
 
 AMaxFishingGameMode::AMaxFishingGameMode()
 {

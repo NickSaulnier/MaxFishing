@@ -32,3 +32,6 @@ Build/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Local upgrade / migration logs
+UpgradeLog.htm

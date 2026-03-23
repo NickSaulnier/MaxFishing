@@ -1,6 +1,6 @@
 // Copyright MaxFishing Project
 
-#include "Fish/BTTask_FishSetState.h"
+#include "BTTask_FishSetState.h"
 #include "BehaviorTree/BlackboardComponent.h"
 
 UBTTask_FishSetState::UBTTask_FishSetState()
