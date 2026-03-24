@@ -1,6 +1,7 @@
 // Copyright MaxFishing Project
 
 #include "MaxFishingWaterPlacement.h"
+#include "GerstnerWaterWaves.h"
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
 #include "WaterBodyLakeActor.h"
@@ -191,6 +192,47 @@ namespace
 		Body->UpdateMaterialInstances();
 	}
 
+	/** Procedural calm-lake Gerstner (no editor asset); only for lakes tagged at runtime bootstrap. */
+	static void MaxFishingApplyCalmGerstnerWavesToRuntimeLake(AWaterBodyLake* Lake)
+	{
+		if (!Lake || !Lake->Tags.Contains(MaxFishingWaterBootstrap::RuntimeWaterTag))
+		{
+			return;
+		}
+		if (const UWaterBodyComponent* Body = Lake->GetWaterBodyComponent())
+		{
+			if (Body->HasWaves())
+			{
+				return;
+			}
+		}
+
+		UGerstnerWaterWaves* Waves = NewObject<UGerstnerWaterWaves>(
+			Lake,
+			MakeUniqueObjectName(Lake, UGerstnerWaterWaves::StaticClass(), TEXT("MaxFishingGerstnerWaves")),
+			RF_Transactional);
+
+		if (UGerstnerWaterWaveGeneratorSimple* Gen = Cast<UGerstnerWaterWaveGeneratorSimple>(Waves->GerstnerWaveGenerator))
+		{
+			Gen->NumWaves = 8;
+			Gen->Randomness = 0.12f;
+			Gen->MinWavelength = 220.f;
+			Gen->MaxWavelength = 2200.f;
+			Gen->WavelengthFalloff = 2.f;
+			Gen->MinAmplitude = 1.2f;
+			Gen->MaxAmplitude = 14.f;
+			Gen->AmplitudeFalloff = 2.f;
+			Gen->WindAngleDeg = 40.f;
+			Gen->DirectionAngularSpreadDeg = 50.f;
+			Gen->SmallWaveSteepness = 0.32f;
+			Gen->LargeWaveSteepness = 0.12f;
+			Gen->SteepnessFalloff = 1.f;
+		}
+
+		Waves->RecomputeWaves(false);
+		Lake->SetWaterWaves(Waves);
+	}
+
 	static void MaxFishingRefreshExistingWater(UWorld* World)
 	{
 		if (!World)
@@ -202,6 +244,7 @@ namespace
 			if (AWaterBodyLake* LakeActor = Cast<AWaterBodyLake>(*It))
 			{
 				MaxFishingAlignLakeActorZAboveLandscape(World, LakeActor);
+				MaxFishingApplyCalmGerstnerWavesToRuntimeLake(LakeActor);
 			}
 			if (UWaterBodyComponent* Body = It->GetWaterBodyComponent())
 			{
@@ -280,6 +323,12 @@ namespace
 		{
 			MaxFishingEnsureLakeRootMobility(Body);
 			MaxFishingApplyDefaultLakeMaterialsIfNeeded(Body);
+		}
+
+		MaxFishingApplyCalmGerstnerWavesToRuntimeLake(Lake);
+
+		if (UWaterBodyComponent* Body = Lake->GetWaterBodyComponent())
+		{
 			FOnWaterBodyChangedParams Params;
 			Params.bShapeOrPositionChanged = true;
 			Params.bUserTriggered = true;

@@ -9,6 +9,29 @@
 #include "NiagaraSystem.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "WaterBodyActor.h"
+#include "WaterBodyComponent.h"
+#include "WaterBodyTypes.h"
+
+namespace
+{
+	static constexpr float LureWaterDepthForWaveQueryCm = 10000.f;
+
+	static void MaxFishingApplyWaveHeightToLureZ(UWaterBodyComponent* WaterBody, float WaterPlaneZ, FVector& InOutLureLocation)
+	{
+		if (!WaterBody || !WaterBody->HasWaves())
+		{
+			return;
+		}
+		FWaveInfo WaveInfo;
+		WaveInfo.Normal = FVector::UpVector;
+		const FVector QueryPos(InOutLureLocation.X, InOutLureLocation.Y, WaterPlaneZ);
+		if (WaterBody->GetWaveInfoAtPosition(QueryPos, LureWaterDepthForWaveQueryCm, true, WaveInfo))
+		{
+			InOutLureLocation.Z = WaterPlaneZ + WaveInfo.Height;
+		}
+	}
+}
 
 UFishingRodComponent::UFishingRodComponent()
 {
@@ -22,6 +45,8 @@ void UFishingRodComponent::BeginPlay()
 	OwnerCharacter = Cast<AMaxFishingCharacter>(GetOwner());
 	LureWorldLocation = GetRodTipWorldLocation();
 	LastLureForSplashTest = LureWorldLocation;
+	LureWaterBody = nullptr;
+	LureWaterPlaneZ = 0.f;
 }
 
 void UFishingRodComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -36,6 +61,19 @@ void UFishingRodComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		if (Dist > 5.f)
 		{
 			LureWorldLocation += ToTip.GetSafeNormal() * FMath::Min(Dist, 600.f * DeltaTime);
+		}
+	}
+
+	if (bLureInWater)
+	{
+		if (UWaterBodyComponent* WB = LureWaterBody.Get())
+		{
+			MaxFishingApplyWaveHeightToLureZ(WB, LureWaterPlaneZ, LureWorldLocation);
+		}
+		else
+		{
+			LureWaterBody = nullptr;
+			bLureInWater = false;
 		}
 	}
 
@@ -66,12 +104,20 @@ void UFishingRodComponent::CastToward(const FVector& WorldDirection)
 
 	FCollisionQueryParams Params(NAME_None, false, GetOwner());
 	bLureInWater = false;
+	LureWaterBody = nullptr;
+	LureWaterPlaneZ = 0.f;
 	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, LureTraceChannel, Params))
 	{
 		LureWorldLocation = Hit.ImpactPoint;
-		if (Hit.GetActor() && Hit.GetActor()->ActorHasTag(FName(TEXT("Water"))))
+		if (AWaterBody* WaterBodyActor = Cast<AWaterBody>(Hit.GetActor()))
 		{
-			bLureInWater = true;
+			if (UWaterBodyComponent* WB = WaterBodyActor->GetWaterBodyComponent())
+			{
+				bLureInWater = true;
+				LureWaterBody = WB;
+				LureWaterPlaneZ = Hit.ImpactPoint.Z;
+				MaxFishingApplyWaveHeightToLureZ(WB, LureWaterPlaneZ, LureWorldLocation);
+			}
 		}
 	}
 	else

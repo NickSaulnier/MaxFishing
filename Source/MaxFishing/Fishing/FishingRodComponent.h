@@ -11,6 +11,7 @@
 class UCableComponent;
 class USplineComponent;
 class UNiagaraSystem;
+class UWaterBodyComponent;
 class AMaxFishingCharacter;
 
 UENUM(BlueprintType)
@@ -84,4 +85,10 @@ protected:
 	bool bHadSplashEvent = false;
 
 	FVector LastLureForSplashTest = FVector::ZeroVector;
+
+	/** When the lure is in a Water plugin body, used with GetWaveInfoAtPosition for wavy surface Z. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UWaterBodyComponent> LureWaterBody;
+
+	float LureWaterPlaneZ = 0.f;
 };
