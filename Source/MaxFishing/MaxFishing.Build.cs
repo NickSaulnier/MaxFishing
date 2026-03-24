@@ -39,7 +39,8 @@ public class MaxFishing : ModuleRules
 			"Slate",
 			"SlateCore",
 			"UMG",
-			"AudioExtensions"
+			"AudioExtensions",
+			"Landscape"
 		});
 	}
 }
