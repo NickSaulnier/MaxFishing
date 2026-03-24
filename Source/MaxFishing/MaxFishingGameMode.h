@@ -13,4 +13,9 @@ class MAXFISHING_API AMaxFishingGameMode : public AGameModeBase
 
 public:
 	AMaxFishingGameMode();
+
+	virtual void StartPlay() override;
+
+private:
+	void EnsureRuntimeWater();
 };

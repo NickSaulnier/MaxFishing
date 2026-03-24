@@ -35,3 +35,6 @@ Desktop.ini
 
 # Local upgrade / migration logs
 UpgradeLog.htm
+
+# Debug session NDJSON logs (not part of the game)
+debug-*.log

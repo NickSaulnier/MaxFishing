@@ -14,6 +14,6 @@ public class MaxFishingEditorTarget : TargetRules
 		// Epic support asks for it — Unique can trigger follow-on UBT/VS issues.
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 
-		ExtraModuleNames.AddRange(new string[] { "MaxFishing" });
+		ExtraModuleNames.AddRange(new string[] { "MaxFishing", "MaxFishingEditor" });
 	}
 }

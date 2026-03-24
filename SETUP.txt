@@ -11,11 +11,13 @@ MaxFishing — Unreal Engine 5 C++ project setup
 4) Launch the editor (F5 from VS, or open the .uproject). On first open, confirm
    plugins: Water, Cable Component, Enhanced Input, Metasound (enabled in .uproject).
 
-5) Engine version pin: "EngineAssociation" in MaxFishing.uproject is set to "5.6".
-   If you use a different 5.x install, change it to match your installed version
-   or use "Switch Unreal Engine version" from the .uproject context menu.
+5) Engine version pin: "EngineAssociation" in MaxFishing.uproject should match your installed 5.x.
+
+Water: The MaxFishingEditor module places a Water Zone + lake in the editor viewport when the
+current level has no water (e.g. Open World template). Save the level if you want to keep it.
+Play In Editor still uses the same placement from MaxFishingGameMode when needed.
 
 Input (prototype): Left mouse = cast, Right mouse hold = reel (Enhanced Input, no IMC asset required).
 
-See Content/LevelSetup.txt for water + landscape steps.
+See Content/LevelSetup.txt for manual water + landscape steps.
 See Content/AI/BehaviorTree_Setup.txt for fish blackboard / behavior tree wiring.

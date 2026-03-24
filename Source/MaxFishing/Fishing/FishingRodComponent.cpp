@@ -8,7 +8,6 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Engine/World.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/Pawn.h"
 
 UFishingRodComponent::UFishingRodComponent()
@@ -65,7 +64,7 @@ void UFishingRodComponent::CastToward(const FVector& WorldDirection)
 	FHitResult Hit;
 	const FVector End = Start + Dir * MaxCastDistance;
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(FishingCast), false, GetOwner());
+	FCollisionQueryParams Params(NAME_None, false, GetOwner());
 	bLureInWater = false;
 	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, LureTraceChannel, Params))
 	{
@@ -141,14 +140,6 @@ void UFishingRodComponent::UpdateLineVisual()
 	default:
 		break;
 	}
-
-#if ENABLE_DRAW_DEBUG
-	if (GetWorld() && OwnerCharacter->IsLocallyControlled())
-	{
-		DrawDebugLine(GetWorld(), GetRodTipWorldLocation(), LureWorldLocation, FColor::Cyan, false, -1.f, 0, 1.5f);
-		DrawDebugSphere(GetWorld(), LureWorldLocation, 12.f, 8, FColor::Green, false, -1.f, 0, 1.f);
-	}
-#endif
 }
 
 void UFishingRodComponent::UpdateCableLine() const
