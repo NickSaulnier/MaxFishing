@@ -9,12 +9,19 @@
 #include "Logging/LogMacros.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionAppendVector.h"
 #include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionLocalPosition.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSine.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionTransformPosition.h"
+#include "Materials/MaterialExpressionVertexNormalWS.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
+#include "SceneTypes.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
@@ -263,6 +270,151 @@ namespace MaxFishingEditorTroutContent
 		else
 		{
 			UE_LOG(LogMaxFishingTroutContent, Log, TEXT("M_FishRuntimeDiffuse: saved to %s"), *PackageFilename);
+		}
+	}
+
+	/**
+	 * Lit material with FishDiffuse + World Position Offset (sine along local X, offset along vertex normal).
+	 * Scalar params: SwimAmplitude, SwimTimeScale, SwimPhaseDensity (tune in MI / MID at runtime).
+	 */
+	void TryCreateFishStaticSwimMaterialIfMissing()
+	{
+		if (LoadObject<UMaterial>(nullptr, TEXT("/Game/Fish/RainbowTrout/M_FishStaticSwim.M_FishStaticSwim")))
+		{
+			return;
+		}
+
+		ScanTroutContentFolder();
+
+		UTexture2D* Diffuse = Cast<UTexture2D>(
+			StaticLoadObject(UTexture2D::StaticClass(), nullptr, TEXT("/Game/Fish/RainbowTrout/texture_diffuse.texture_diffuse")));
+		if (!Diffuse)
+		{
+			UE_LOG(LogMaxFishingTroutContent, Verbose, TEXT("M_FishStaticSwim: texture_diffuse asset not found."));
+			return;
+		}
+
+		const FString PackageName = TEXT("/Game/Fish/RainbowTrout/M_FishStaticSwim");
+		UPackage* Package = CreatePackage(*PackageName);
+		if (!Package)
+		{
+			UE_LOG(LogMaxFishingTroutContent, Warning, TEXT("M_FishStaticSwim: CreatePackage failed for %s"), *PackageName);
+			return;
+		}
+
+		UMaterial* Mat = NewObject<UMaterial>(Package, FName(TEXT("M_FishStaticSwim")), RF_Public | RF_Standalone | RF_Transactional);
+		Mat->MaterialDomain = MD_Surface;
+		Mat->SetShadingModel(MSM_DefaultLit);
+		Mat->MaxWorldPositionOffsetDisplacement = 12.f;
+
+		UMaterialExpressionTextureSampleParameter2D* ExprDiffuse = Cast<UMaterialExpressionTextureSampleParameter2D>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -400, -150));
+		if (!ExprDiffuse)
+		{
+			UE_LOG(LogMaxFishingTroutContent, Warning, TEXT("M_FishStaticSwim: failed to create diffuse expression."));
+			return;
+		}
+		ExprDiffuse->ParameterName = FName(TEXT("FishDiffuse"));
+		ExprDiffuse->Texture = Diffuse;
+		ExprDiffuse->SamplerType = SAMPLERTYPE_Color;
+		if (!UMaterialEditingLibrary::ConnectMaterialProperty(ExprDiffuse, TEXT("RGB"), MP_BaseColor))
+		{
+			UE_LOG(LogMaxFishingTroutContent, Warning, TEXT("M_FishStaticSwim: ConnectMaterialProperty BaseColor failed."));
+		}
+
+		// WPO: sin(Time * SwimTimeScale + LocalPosition.x * SwimPhaseDensity) * SwimAmplitude * VertexNormalWS
+		UMaterialExpressionLocalPosition* ExprLocal = Cast<UMaterialExpressionLocalPosition>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionLocalPosition::StaticClass(), -1100, 350));
+		if (!ExprLocal)
+		{
+			UE_LOG(LogMaxFishingTroutContent, Warning, TEXT("M_FishStaticSwim: LocalPosition failed."));
+			return;
+		}
+		ExprLocal->LocalOrigin = ELocalPositionOrigin::Instance;
+
+		UMaterialExpressionComponentMask* MaskX = Cast<UMaterialExpressionComponentMask>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionComponentMask::StaticClass(), -900, 350));
+		MaskX->R = true;
+		MaskX->G = false;
+		MaskX->B = false;
+		MaskX->A = false;
+		// Same pin-name issue as Sine: ConnectMaterialExpressions(..., TEXT("Input")) may not bind ComponentMask.
+		MaskX->Input.Connect(0, ExprLocal);
+
+		UMaterialExpressionTime* ExprTime = Cast<UMaterialExpressionTime>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTime::StaticClass(), -1100, 200));
+
+		UMaterialExpressionScalarParameter* ParamTimeScale = Cast<UMaterialExpressionScalarParameter>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -900, 200));
+		ParamTimeScale->ParameterName = FName(TEXT("SwimTimeScale"));
+		ParamTimeScale->DefaultValue = 2.5f;
+
+		UMaterialExpressionMultiply* MulTime = Cast<UMaterialExpressionMultiply>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionMultiply::StaticClass(), -700, 200));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(ExprTime, FString(), MulTime, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(ParamTimeScale, FString(), MulTime, TEXT("B"));
+
+		UMaterialExpressionScalarParameter* ParamPhaseDensity = Cast<UMaterialExpressionScalarParameter>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -900, 500));
+		ParamPhaseDensity->ParameterName = FName(TEXT("SwimPhaseDensity"));
+		ParamPhaseDensity->DefaultValue = 0.12f;
+
+		UMaterialExpressionMultiply* MulPhase = Cast<UMaterialExpressionMultiply>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionMultiply::StaticClass(), -700, 400));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(MaskX, FString(), MulPhase, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(ParamPhaseDensity, FString(), MulPhase, TEXT("B"));
+
+		UMaterialExpressionAdd* AddPhase = Cast<UMaterialExpressionAdd>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionAdd::StaticClass(), -500, 280));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(MulTime, FString(), AddPhase, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(MulPhase, FString(), AddPhase, TEXT("B"));
+
+		UMaterialExpressionSine* ExprSin = Cast<UMaterialExpressionSine>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionSine::StaticClass(), -350, 280));
+		ExprSin->Period = 1.f;
+		// ConnectMaterialExpressions(..., TEXT("Input")) does not resolve Sine's pin name in UE 5.x; connect first input explicitly.
+		ExprSin->Input.Connect(0, AddPhase);
+
+		UMaterialExpressionScalarParameter* ParamAmp = Cast<UMaterialExpressionScalarParameter>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -500, 500));
+		ParamAmp->ParameterName = FName(TEXT("SwimAmplitude"));
+		ParamAmp->DefaultValue = 1.2f;
+
+		UMaterialExpressionMultiply* MulAmp = Cast<UMaterialExpressionMultiply>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionMultiply::StaticClass(), -200, 350));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(ExprSin, FString(), MulAmp, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(ParamAmp, FString(), MulAmp, TEXT("B"));
+
+		UMaterialExpressionVertexNormalWS* ExprNormal = Cast<UMaterialExpressionVertexNormalWS>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVertexNormalWS::StaticClass(), -350, 550));
+
+		UMaterialExpressionMultiply* MulWPO = Cast<UMaterialExpressionMultiply>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionMultiply::StaticClass(), -200, 450));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(MulAmp, FString(), MulWPO, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(ExprNormal, FString(), MulWPO, TEXT("B"));
+
+		if (!UMaterialEditingLibrary::ConnectMaterialProperty(MulWPO, FString(), MP_WorldPositionOffset))
+		{
+			UE_LOG(LogMaxFishingTroutContent, Warning, TEXT("M_FishStaticSwim: ConnectMaterialProperty WorldPositionOffset failed."));
+		}
+
+		UMaterialEditingLibrary::RecompileMaterial(Mat);
+
+		FAssetRegistryModule::AssetCreated(Mat);
+
+		Package->MarkPackageDirty();
+
+		const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		const bool bSaved = UPackage::SavePackage(Package, Mat, *PackageFilename, SaveArgs);
+		if (!bSaved)
+		{
+			UE_LOG(LogMaxFishingTroutContent, Warning, TEXT("M_FishStaticSwim: SavePackage failed (%s)."), *PackageFilename);
+		}
+		else
+		{
+			UE_LOG(LogMaxFishingTroutContent, Log, TEXT("M_FishStaticSwim: saved to %s"), *PackageFilename);
 		}
 	}
 

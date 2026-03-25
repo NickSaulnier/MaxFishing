@@ -20,6 +20,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	/** Applied when the imported mesh bounds are very small (common for OBJ in meter units). */
 	UPROPERTY(EditAnywhere, Category = "Fish", meta = (ClampMin = "0.01"))
@@ -27,4 +28,18 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Fish", meta = (ClampMin = "0.0"))
 	float TinyMeshMaxExtentCm = 8.f;
+
+	/** Subtle whole-mesh pitch wobble to complement material WPO swim (static mesh only). */
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim")
+	bool bEnableSwimWobble = true;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim", meta = (ClampMin = "0.0"))
+	float SwimWobblePitchAmplitudeDegrees = 1.5f;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim", meta = (ClampMin = "0.0"))
+	float SwimWobbleFrequencyHz = 0.45f;
+
+	FRotator BaseTroutMeshRelativeRotation = FRotator::ZeroRotator;
+	float SwimWobblePhase = 0.f;
+	float SwimWobbleTime = 0.f;
 };

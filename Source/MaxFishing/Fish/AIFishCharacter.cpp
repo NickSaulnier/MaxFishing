@@ -11,6 +11,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialParameters.h"
+#include "RHIShaderPlatform.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace MaxFishingTroutMeshPrivate
@@ -118,6 +119,43 @@ namespace MaxFishingTroutMeshPrivate
 		Mesh->MarkRenderStateDirty();
 	}
 
+	/** Editor-created M_FishStaticSwim: FishDiffuse + WPO sine swim (preferred for static trout). */
+	static bool ApplyProjectFishStaticSwimMaterial(UStaticMeshComponent* Mesh, UTexture2D* Diffuse)
+	{
+		if (!Mesh || !Diffuse)
+		{
+			return false;
+		}
+		UMaterialInterface* Parent = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Fish/RainbowTrout/M_FishStaticSwim.M_FishStaticSwim"));
+		if (!Parent)
+		{
+			Parent = Cast<UMaterialInterface>(
+				StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Fish/RainbowTrout/M_FishStaticSwim.M_FishStaticSwim")));
+		}
+		if (!Parent)
+		{
+			return false;
+		}
+		if (UMaterial* Mat = Cast<UMaterial>(Parent))
+		{
+			if (Mat->IsCompilingOrHadCompileError(GMaxRHIShaderPlatform))
+			{
+				return false;
+			}
+		}
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Parent, Mesh);
+		if (!MID)
+		{
+			return false;
+		}
+		MID->SetTextureParameterValue(FName(TEXT("FishDiffuse")), Diffuse);
+		MID->SetScalarParameterValue(FName(TEXT("SwimAmplitude")), 1.2f);
+		MID->SetScalarParameterValue(FName(TEXT("SwimTimeScale")), 2.5f);
+		MID->SetScalarParameterValue(FName(TEXT("SwimPhaseDensity")), 0.12f);
+		AssignMidToAllMeshSlots(Mesh, MID);
+		return true;
+	}
+
 	/** Editor-created M_FishRuntimeDiffuse (FishDiffuse -> BaseColor); no engine debug materials. */
 	static bool ApplyProjectFishRuntimeDiffuseMaterial(UStaticMeshComponent* Mesh, UTexture2D* Diffuse)
 	{
@@ -223,6 +261,10 @@ namespace MaxFishingTroutMeshPrivate
 			return false;
 		}
 
+		if (ApplyProjectFishStaticSwimMaterial(Mesh, Diffuse))
+		{
+			return true;
+		}
 		if (ApplyProjectFishRuntimeDiffuseMaterial(Mesh, Diffuse))
 		{
 			return true;
@@ -233,7 +275,8 @@ namespace MaxFishingTroutMeshPrivate
 
 AAIFishCharacter::AAIFishCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
 
 	AIControllerClass = AFishAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
@@ -306,6 +349,24 @@ void AAIFishCharacter::BeginPlay()
 			{
 				MaxFishingTroutMeshPrivate::EnsureMaterialsOnMesh(TroutMesh);
 			}
+
+			BaseTroutMeshRelativeRotation = TroutMesh->GetRelativeRotation();
+			SwimWobblePhase = FMath::FRandRange(0.f, UE_TWO_PI);
 		}
 	}
+}
+
+void AAIFishCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bEnableSwimWobble || !TroutMesh || !TroutMesh->GetStaticMesh())
+	{
+		return;
+	}
+
+	SwimWobbleTime += DeltaSeconds;
+	const float Pitch =
+		SwimWobblePitchAmplitudeDegrees * FMath::Sin(UE_TWO_PI * SwimWobbleFrequencyHz * SwimWobbleTime + SwimWobblePhase);
+	TroutMesh->SetRelativeRotation(BaseTroutMeshRelativeRotation + FRotator(Pitch, 0.f, 0.f));
 }

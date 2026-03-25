@@ -23,6 +23,7 @@ namespace MaxFishingEditorTroutContent
 	void TryImportRainbowTroutTexturesIfMissing();
 	void TryCreateRainbowTroutMaterialIfMissing();
 	void TryCreateFishRuntimeDiffuseMaterialIfMissing();
+	void TryCreateFishStaticSwimMaterialIfMissing();
 	void TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
 }
 
@@ -158,6 +159,7 @@ private:
 					{
 						MaxFishingEditorTroutContent::TryCreateRainbowTroutMaterialIfMissing();
 						MaxFishingEditorTroutContent::TryCreateFishRuntimeDiffuseMaterialIfMissing();
+						MaxFishingEditorTroutContent::TryCreateFishStaticSwimMaterialIfMissing();
 						MaxFishingEditorTroutContent::TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
 					}));
 					// Registry / disk may lag one frame after texture import; retry once after a short delay.
@@ -167,6 +169,7 @@ private:
 						{
 							MaxFishingEditorTroutContent::TryCreateRainbowTroutMaterialIfMissing();
 							MaxFishingEditorTroutContent::TryCreateFishRuntimeDiffuseMaterialIfMissing();
+							MaxFishingEditorTroutContent::TryCreateFishStaticSwimMaterialIfMissing();
 							MaxFishingEditorTroutContent::TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
 						}),
 						3.f,
