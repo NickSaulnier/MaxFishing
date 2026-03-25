@@ -22,9 +22,10 @@ Input (prototype): Left mouse = cast, Right mouse hold = reel (Enhanced Input, n
 See Content/LevelSetup.txt for manual water + landscape steps.
 See Content/AI/BehaviorTree_Setup.txt for fish blackboard / behavior tree wiring.
 
-Rainbow trout (Content/Fish/RainbowTrout): Place base.obj in this folder. On the first editor-world tick
-(after a map is available), MaxFishingEditor imports it to /Game/Fish/RainbowTrout/base if the .uasset is
-missing (you can still import manually).
-C++ loads base.base first, then SM_base / SM_RainbowTrout. Null material slots get BasicShapeMaterial so fish
-stay visible under single-layer water. If the mesh is pinhead-sized, tune AAIFishCharacter
-TinyMeshAutoScale / TinyMeshMaxExtentCm or OBJ import scale.
+Rainbow trout (Content/Fish/RainbowTrout): Place base.obj here; the editor imports it to /Game/.../base when
+needed. Place texture_diffuse.png, texture_normal.png, texture_roughness.png, texture_metallic.png in the same
+folder; the editor imports them to UTexture2D assets and (next tick) builds and saves M_RainbowTrout with
+parameters TroutDiffuse / TroutNormal / TroutRoughness / TroutMetallic. At runtime, AAIFishCharacter builds a MID from M_RainbowTrout when that asset exists. If M_RainbowTrout is still
+missing but texture_diffuse is imported, it uses an engine debug material and sets its first texture parameter to
+the diffuse (so you still see color). Check Output Log for LogMaxFishingTroutContent when saving M_RainbowTrout.
+Tune TinyMeshAutoScale / TinyMeshMaxExtentCm or OBJ scale if the mesh is tiny.

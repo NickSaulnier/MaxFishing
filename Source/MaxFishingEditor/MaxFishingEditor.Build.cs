@@ -16,6 +16,7 @@ public class MaxFishingEditor : ModuleRules
 			"UnrealEd",
 			"AssetRegistry",
 			"AssetTools",
+			"MaterialEditor",
 			"MaxFishing"
 		});
 	}

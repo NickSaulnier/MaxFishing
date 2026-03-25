@@ -13,6 +13,20 @@
 #include "TimerManager.h"
 #include "UObject/SoftObjectPath.h"
 
+namespace
+{
+	FTimerHandle GTroutMaterialRetryTimer;
+}
+
+namespace MaxFishingEditorTroutContent
+{
+	void TryImportRainbowTroutTexturesIfMissing();
+	void TryCreateRainbowTroutMaterialIfMissing();
+	void TryCreateFishRuntimeDiffuseMaterialIfMissing();
+	void TryCreateFishStaticSwimMaterialIfMissing();
+	void TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
+}
+
 namespace MaxFishingEditorWater
 {
 	/** Scan /Water so Content Browser shows plugin assets without a manual folder force-load; load core materials into memory. */
@@ -46,8 +60,6 @@ namespace MaxFishingEditorWater
 
 namespace MaxFishingEditorTrout
 {
-	static bool GImportAttemptedThisEditorSession = false;
-
 	/**
 	 * If base.obj exists under Content but no UStaticMesh asset yet, import once so PIE can load /Game/Fish/RainbowTrout/base.
 	 */
@@ -91,12 +103,21 @@ public:
 	{
 		MaxFishingEditorWater::PreloadWaterPluginContent();
 
+		// World-UV material upgrade must not depend on a loaded editor map (TryPlaceWaterInEditorWorld often returns early).
+		OnEditorInitializedHandle = FEditorDelegates::OnEditorInitialized.AddLambda([](double /*Duration*/)
+		{
+			MaxFishingEditorTroutContent::TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
+		});
+
 		OnMapOpenedHandle = FEditorDelegates::OnMapOpened.AddRaw(this, &FMaxFishingEditorModule::HandleMapOpened);
 		TryPlaceWaterInEditorWorld();
 	}
 
 	virtual void ShutdownModule() override
 	{
+		FEditorDelegates::OnEditorInitialized.Remove(OnEditorInitializedHandle);
+		OnEditorInitializedHandle = FDelegateHandle();
+
 		FEditorDelegates::OnMapOpened.Remove(OnMapOpenedHandle);
 		OnMapOpenedHandle = FDelegateHandle();
 	}
@@ -124,11 +145,8 @@ private:
 		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda(
 			[WeakWorld = TWeakObjectPtr<UWorld>(World)]()
 			{
-				if (!MaxFishingEditorTrout::GImportAttemptedThisEditorSession)
-				{
-					MaxFishingEditorTrout::GImportAttemptedThisEditorSession = true;
-					MaxFishingEditorTrout::TryImportBaseObjIfMissing();
-				}
+				MaxFishingEditorTrout::TryImportBaseObjIfMissing();
+				MaxFishingEditorTroutContent::TryImportRainbowTroutTexturesIfMissing();
 				if (UWorld* W = WeakWorld.Get())
 				{
 					MaxFishingPlaceDefaultWater(W);
@@ -136,10 +154,31 @@ private:
 					{
 						GEditor->RedrawAllViewports();
 					}
+					// Material creation needs texture assets loadable after ImportAssetTasks finishes.
+					W->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([]()
+					{
+						MaxFishingEditorTroutContent::TryCreateRainbowTroutMaterialIfMissing();
+						MaxFishingEditorTroutContent::TryCreateFishRuntimeDiffuseMaterialIfMissing();
+						MaxFishingEditorTroutContent::TryCreateFishStaticSwimMaterialIfMissing();
+						MaxFishingEditorTroutContent::TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
+					}));
+					// Registry / disk may lag one frame after texture import; retry once after a short delay.
+					W->GetTimerManager().SetTimer(
+						GTroutMaterialRetryTimer,
+						FTimerDelegate::CreateLambda([]()
+						{
+							MaxFishingEditorTroutContent::TryCreateRainbowTroutMaterialIfMissing();
+							MaxFishingEditorTroutContent::TryCreateFishRuntimeDiffuseMaterialIfMissing();
+							MaxFishingEditorTroutContent::TryCreateFishStaticSwimMaterialIfMissing();
+							MaxFishingEditorTroutContent::TryUpgradeRainbowTroutDiffuseToWorldPlaneUV();
+						}),
+						3.f,
+						false);
 				}
 			}));
 	}
 
+	FDelegateHandle OnEditorInitializedHandle;
 	FDelegateHandle OnMapOpenedHandle;
 };
 
