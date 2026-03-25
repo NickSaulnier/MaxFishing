@@ -21,3 +21,10 @@ Input (prototype): Left mouse = cast, Right mouse hold = reel (Enhanced Input, n
 
 See Content/LevelSetup.txt for manual water + landscape steps.
 See Content/AI/BehaviorTree_Setup.txt for fish blackboard / behavior tree wiring.
+
+Rainbow trout (Content/Fish/RainbowTrout): Place base.obj in this folder. On the first editor-world tick
+(after a map is available), MaxFishingEditor imports it to /Game/Fish/RainbowTrout/base if the .uasset is
+missing (you can still import manually).
+C++ loads base.base first, then SM_base / SM_RainbowTrout. Null material slots get BasicShapeMaterial so fish
+stay visible under single-layer water. If the mesh is pinhead-sized, tune AAIFishCharacter
+TinyMeshAutoScale / TinyMeshMaxExtentCm or OBJ import scale.
