@@ -4,6 +4,7 @@
 #include "FishAIController.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
@@ -13,6 +14,9 @@
 #include "Materials/MaterialParameters.h"
 #include "RHIShaderPlatform.h"
 #include "UObject/UObjectGlobals.h"
+#include "WaterBodyLakeActor.h"
+#include "WaterBodyComponent.h"
+#include "WaterBodyTypes.h"
 
 namespace MaxFishingTroutMeshPrivate
 {
@@ -273,10 +277,133 @@ namespace MaxFishingTroutMeshPrivate
 	}
 }
 
+namespace MaxFishingFishWaterPrivate
+{
+	static const FName RuntimeWaterTag(TEXT("MaxFishingRuntimeWater"));
+	static constexpr float WaveQueryDepthCm = 10000.f;
+}
+
+bool AAIFishCharacter::ResolveWaterBody()
+{
+	if (CachedWaterBody.IsValid())
+	{
+		return true;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	AWaterBodyLake* Lake = nullptr;
+	for (TActorIterator<AWaterBodyLake> It(World); It; ++It)
+	{
+		if (It->ActorHasTag(MaxFishingFishWaterPrivate::RuntimeWaterTag))
+		{
+			Lake = *It;
+			break;
+		}
+	}
+	if (!Lake)
+	{
+		for (TActorIterator<AWaterBodyLake> It(World); It; ++It)
+		{
+			Lake = *It;
+			break;
+		}
+	}
+	if (!Lake)
+	{
+		return false;
+	}
+	CachedWaterBody = Lake->GetWaterBodyComponent();
+	LakeCenterWorld = Lake->GetActorLocation();
+	return CachedWaterBody.IsValid();
+}
+
+float AAIFishCharacter::QueryWaterSurfaceZAtXY(float X, float Y) const
+{
+	UWaterBodyComponent* WB = CachedWaterBody.Get();
+	if (!WB)
+	{
+		return LakeCenterWorld.Z;
+	}
+	FWaveInfo WaveInfo;
+	WaveInfo.Normal = FVector::UpVector;
+	const FVector QueryPos(X, Y, LakeCenterWorld.Z);
+	if (WB->HasWaves() && WB->GetWaveInfoAtPosition(QueryPos, MaxFishingFishWaterPrivate::WaveQueryDepthCm, true, WaveInfo))
+	{
+		return LakeCenterWorld.Z + WaveInfo.Height;
+	}
+	return LakeCenterWorld.Z;
+}
+
+void AAIFishCharacter::PickNewSwimTarget()
+{
+	const float MaxR = FMath::Max(50.f, LakeSwimRadiusCm - LakeBoundaryMarginCm - 400.f);
+	const float T = FMath::FRandRange(0.f, UE_TWO_PI);
+	const float D = FMath::Sqrt(FMath::FRand()) * MaxR;
+	const FVector2D Offset(FMath::Cos(T) * D, FMath::Sin(T) * D);
+	SwimTargetWorld = LakeCenterWorld + FVector(Offset.X, Offset.Y, 0.f);
+	const float SurfaceZ = QueryWaterSurfaceZAtXY(SwimTargetWorld.X, SwimTargetWorld.Y);
+	SwimTargetWorld.Z = SurfaceZ - SwimDepthBelowSurfaceCm;
+}
+
+void AAIFishCharacter::TickWaterSwimming(float DeltaSeconds, UCharacterMovementComponent* Move)
+{
+	if (!Move || !bEnableWaterSwimming)
+	{
+		return;
+	}
+	if (!ResolveWaterBody())
+	{
+		return;
+	}
+
+	FVector Loc = GetActorLocation();
+	const float MaxR = FMath::Max(50.f, LakeSwimRadiusCm - LakeBoundaryMarginCm);
+
+	// Keep XY inside the circular lake footprint (matches spline lake used at runtime).
+	{
+		const FVector2D FromCenter(Loc.X - LakeCenterWorld.X, Loc.Y - LakeCenterWorld.Y);
+		const float D = FromCenter.Size();
+		if (D > MaxR)
+		{
+			const FVector2D Clamped = FromCenter.GetSafeNormal() * MaxR;
+			Loc = FVector(LakeCenterWorld.X + Clamped.X, LakeCenterWorld.Y + Clamped.Y, Loc.Z);
+			SetActorLocation(Loc, false, nullptr, ETeleportType::TeleportPhysics);
+		}
+	}
+
+	const float SurfaceZHere = QueryWaterSurfaceZAtXY(Loc.X, Loc.Y);
+	const float TargetZ = SurfaceZHere - SwimDepthBelowSurfaceCm;
+
+	const FVector2D ToTarget2D(SwimTargetWorld.X - Loc.X, SwimTargetWorld.Y - Loc.Y);
+	if (ToTarget2D.SizeSquared() < FMath::Square(SwimRetargetDistanceCm))
+	{
+		PickNewSwimTarget();
+	}
+
+	FVector ToTarget(SwimTargetWorld.X - Loc.X, SwimTargetWorld.Y - Loc.Y, 0.f);
+	FVector Dir = ToTarget.GetSafeNormal();
+	if (Dir.IsNearlyZero())
+	{
+		PickNewSwimTarget();
+		ToTarget = FVector(SwimTargetWorld.X - Loc.X, SwimTargetWorld.Y - Loc.Y, 0.f);
+		Dir = ToTarget.GetSafeNormal();
+	}
+
+	const float ZVel = FMath::Clamp((TargetZ - Loc.Z) * SwimZStabilize, -MaxVerticalSwimSpeedCm, MaxVerticalSwimSpeedCm);
+	Move->Velocity = FVector(Dir.X * SwimSpeedCmPerSec, Dir.Y * SwimSpeedCmPerSec, ZVel);
+
+	const float Yaw = FVector(Dir.X, Dir.Y, 0.f).Rotation().Yaw;
+	SetActorRotation(FRotator(0.f, Yaw, 0.f));
+}
+
 AAIFishCharacter::AAIFishCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
+	// Before CharacterMovement so swim velocity applies the same frame.
+	PrimaryActorTick.TickGroup = TG_PrePhysics;
 
 	AIControllerClass = AFishAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
@@ -354,10 +481,23 @@ void AAIFishCharacter::BeginPlay()
 			SwimWobblePhase = FMath::FRandRange(0.f, UE_TWO_PI);
 		}
 	}
+
+	if (bEnableWaterSwimming && ResolveWaterBody())
+	{
+		PickNewSwimTarget();
+	}
 }
 
 void AAIFishCharacter::Tick(float DeltaSeconds)
 {
+	if (bEnableWaterSwimming)
+	{
+		if (UCharacterMovementComponent* Move = GetCharacterMovement())
+		{
+			TickWaterSwimming(DeltaSeconds, Move);
+		}
+	}
+
 	Super::Tick(DeltaSeconds);
 
 	if (!bEnableSwimWobble || !TroutMesh || !TroutMesh->GetStaticMesh())

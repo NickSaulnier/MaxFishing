@@ -7,6 +7,8 @@
 #include "GameFramework/Character.h"
 #include "AIFishCharacter.generated.h"
 
+class UWaterBodyComponent;
+
 UCLASS()
 class MAXFISHING_API AAIFishCharacter : public ACharacter
 {
@@ -21,6 +23,12 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
+
+	/** Wander + velocity steering while staying inside the lake volume (matches runtime lake placement). */
+	void TickWaterSwimming(float DeltaSeconds, class UCharacterMovementComponent* Move);
+	bool ResolveWaterBody();
+	void PickNewSwimTarget();
+	float QueryWaterSurfaceZAtXY(float X, float Y) const;
 
 	/** Applied when the imported mesh bounds are very small (common for OBJ in meter units). */
 	UPROPERTY(EditAnywhere, Category = "Fish", meta = (ClampMin = "0.01"))
@@ -38,6 +46,37 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Fish|Swim", meta = (ClampMin = "0.0"))
 	float SwimWobbleFrequencyHz = 0.45f;
+
+	/** Move horizontally toward wander targets and follow wave height (see MaxFishingFishSpawn lake constants). */
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water")
+	bool bEnableWaterSwimming = true;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "0.0"))
+	float SwimSpeedCmPerSec = 115.f;
+
+	/** Depth below the wave surface (cm); matches demo trout spawn. */
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "0.0"))
+	float SwimDepthBelowSurfaceCm = 25.f;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "10.0"))
+	float SwimRetargetDistanceCm = 450.f;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "0.0"))
+	float LakeBoundaryMarginCm = 800.f;
+
+	/** Default circular lake spline radius (cm); must match MaxFishingWaterPlacement / fish spawn. */
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "100.0"))
+	float LakeSwimRadiusCm = 15000.f;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "0.1"))
+	float SwimZStabilize = 1.35f;
+
+	UPROPERTY(EditAnywhere, Category = "Fish|Swim|Water", meta = (ClampMin = "0.0"))
+	float MaxVerticalSwimSpeedCm = 90.f;
+
+	TWeakObjectPtr<UWaterBodyComponent> CachedWaterBody;
+	FVector LakeCenterWorld = FVector::ZeroVector;
+	FVector SwimTargetWorld = FVector::ZeroVector;
 
 	FRotator BaseTroutMeshRelativeRotation = FRotator::ZeroRotator;
 	float SwimWobblePhase = 0.f;
