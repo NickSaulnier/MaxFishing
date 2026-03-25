@@ -3,6 +3,7 @@
 #include "MaxFishingGameMode.h"
 #include "MaxFishingCharacter.h"
 #include "MaxFishingWaterPlacement.h"
+#include "Engine/World.h"
 
 AMaxFishingGameMode::AMaxFishingGameMode()
 {

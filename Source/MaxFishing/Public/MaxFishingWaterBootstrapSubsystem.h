@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "MaxFishingWaterBootstrapSubsystem.generated.h"
 
 #ifndef MAXFISHING_API
@@ -19,4 +20,7 @@ class MAXFISHING_API UMaxFishingWaterBootstrapSubsystem final : public UWorldSub
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+private:
+	FTimerHandle DemoTroutSpawnTimer;
 };
