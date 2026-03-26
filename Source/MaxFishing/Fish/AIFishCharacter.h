@@ -30,12 +30,19 @@ protected:
 	void PickNewSwimTarget();
 	float QueryWaterSurfaceZAtXY(float X, float Y) const;
 
+	/** Quaternion frame so Z-up OBJ (nose +Z) swims along capsule +X with dorsal toward +Z; optional Euler delta multiplies after. */
+	void ApplyTroutMeshSwimOrientation();
+
 	/** Applied when the imported mesh bounds are very small (common for OBJ in meter units). */
 	UPROPERTY(EditAnywhere, Category = "Fish", meta = (ClampMin = "0.01"))
 	float TinyMeshAutoScale = 120.f;
 
 	UPROPERTY(EditAnywhere, Category = "Fish", meta = (ClampMin = "0.0"))
 	float TinyMeshMaxExtentCm = 8.f;
+
+	/** Extra relative rotation after the quaternion import fix (usually zero; tune if your OBJ axis differs). */
+	UPROPERTY(EditAnywhere, Category = "Fish")
+	FRotator TroutMeshBaseRotation = FRotator::ZeroRotator;
 
 	/** Subtle whole-mesh pitch wobble to complement material WPO swim (static mesh only). */
 	UPROPERTY(EditAnywhere, Category = "Fish|Swim")
