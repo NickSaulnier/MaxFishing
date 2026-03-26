@@ -283,6 +283,20 @@ namespace MaxFishingFishWaterPrivate
 	static constexpr float WaveQueryDepthCm = 10000.f;
 }
 
+void AAIFishCharacter::ApplyTroutMeshSwimOrientation()
+{
+	if (!TroutMesh)
+	{
+		return;
+	}
+	// Logs showed FRotator(-90,0,90) canonicalizes to (-90,90,0) (gimbal lock) -> absUpDot=0 (fish on side).
+	// Compose two non-degenerate rotations in quaternion space: Z-up nose (+mesh Z) -> capsule +X, then +Y -> +Z (dorsal up).
+	const FQuat Qy = FRotator(0.f, -90.f, 0.f).Quaternion();
+	const FQuat Qx = FRotator(-90.f, 0.f, 0.f).Quaternion();
+	const FQuat Frame = (Qx * Qy).GetNormalized();
+	TroutMesh->SetRelativeRotation(Frame * TroutMeshBaseRotation.Quaternion());
+}
+
 bool AAIFishCharacter::ResolveWaterBody()
 {
 	if (CachedWaterBody.IsValid())
@@ -416,8 +430,7 @@ AAIFishCharacter::AAIFishCharacter()
 	TroutMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
 	// Keep mesh pivot near capsule center so we do not bury half the mesh under terrain when Z is shallow.
 	TroutMesh->SetRelativeLocation(FVector::ZeroVector);
-	// OBJ import is often Z-up; pitch -90 lays the fish length along the water plane (was vertical in PIE).
-	TroutMesh->SetRelativeRotation(FRotator(-90.f, 90.f, 0.f));
+	ApplyTroutMeshSwimOrientation();
 	TroutMesh->SetVisibility(true);
 	TroutMesh->SetHiddenInGame(false);
 	TroutMesh->SetRenderInMainPass(true);
@@ -477,6 +490,7 @@ void AAIFishCharacter::BeginPlay()
 				MaxFishingTroutMeshPrivate::EnsureMaterialsOnMesh(TroutMesh);
 			}
 
+			ApplyTroutMeshSwimOrientation();
 			BaseTroutMeshRelativeRotation = TroutMesh->GetRelativeRotation();
 			SwimWobblePhase = FMath::FRandRange(0.f, UE_TWO_PI);
 		}
