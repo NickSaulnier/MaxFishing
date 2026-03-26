@@ -41,6 +41,7 @@ public class MaxFishing : ModuleRules
 			"UMG",
 			"AudioExtensions",
 			"Landscape",
+			"Foliage",
 			"RHI"
 		});
 	}

@@ -19,6 +19,19 @@
 #include "WorldCollision.h"
 #include "UObject/SoftObjectPath.h"
 
+#if WITH_EDITOR
+#include "Landscape.h"
+#include "LandscapeComponent.h"
+#include "LandscapeEdit.h"
+#include "LandscapeInfo.h"
+#include "LandscapeDataAccess.h"
+
+#include "HAL/PlatformFilemanager.h"
+#include "Misc/DateTime.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#endif
+
 namespace MaxFishingWaterBootstrap
 {
 	static const FName RuntimeWaterTag(TEXT("MaxFishingRuntimeWater"));
@@ -35,6 +48,50 @@ namespace
 	static constexpr float DefaultLakeSplineRadiusCm = 15000.f;
 	/** Horizontal gap between lake edge and PlayerStart so spawn is on land, not in water. */
 	static constexpr float PlayerStartShoreStandoffCm = 1500.f;
+
+	/** ~6 ft — max depth at lake center (cm). */
+	static constexpr float LakeCenterDepthCm = 183.f;
+	/** ~2 ft — depth near the shoreline (cm). */
+	static constexpr float LakeShoreDepthCm = 61.f;
+
+#if WITH_EDITOR
+	static void MaxFishingAppendAgentLog(
+		const TCHAR* HypothesisId,
+		const TCHAR* Location,
+		const TCHAR* Message,
+		const FString& DataJson,
+		const TCHAR* RunId)
+	{
+		static int32 GLogCount = 0;
+		if (GLogCount >= 25)
+		{
+			return;
+		}
+		++GLogCount;
+
+		const FString DebugLogPath = FPaths::Combine(FPaths::ProjectDir(), TEXT("debug-950d46.log"));
+		const int64 Timestamp = FDateTime::UtcNow().ToUnixTimestamp();
+		const FString Id = FString::Printf(TEXT("log_%d"), GLogCount);
+
+		const FString Line = FString::Printf(
+			TEXT("{\"sessionId\":\"%s\",\"id\":\"%s\",\"timestamp\":%lld,\"location\":\"%s\",\"message\":\"%s\",\"runId\":\"%s\",\"hypothesisId\":\"%s\",\"data\":{%s}}"),
+			TEXT("950d46"),
+			*Id,
+			Timestamp,
+			Location,
+			Message,
+			RunId,
+			HypothesisId,
+			*DataJson);
+
+		FFileHelper::SaveStringToFile(
+			Line + TEXT("\n"),
+			*DebugLogPath,
+			FFileHelper::EEncodingOptions::AutoDetect,
+			&IFileManager::Get(),
+			EFileWrite::FILEWRITE_Append);
+	}
+#endif // WITH_EDITOR
 
 	static void MaxFishingRebuildAllWaterZones(UWorld* World)
 	{
@@ -132,6 +189,227 @@ namespace
 		Loc.Z = NewZ;
 		Lake->SetActorLocation(Loc, false, nullptr, ETeleportType::TeleportPhysics);
 	}
+
+#if WITH_EDITOR
+	static bool MaxFishingCircleOverlapsBoxXY(const FVector2D& Center, float Radius, const FBox& B)
+	{
+		if (!B.IsValid)
+		{
+			return false;
+		}
+		const float ClosestX = FMath::Clamp(Center.X, B.Min.X, B.Max.X);
+		const float ClosestY = FMath::Clamp(Center.Y, B.Min.Y, B.Max.Y);
+		const float D2 = FVector2D::DistSquared(FVector2D(ClosestX, ClosestY), Center);
+		return D2 <= Radius * Radius;
+	}
+
+	/**
+	 * Sculpt a bowl-shaped lake bed so depth is ~LakeCenterDepthCm at center
+	 * and ~LakeShoreDepthCm toward the shoreline.
+	 *
+	 * NOTE: Editor/PIE only; requires LandscapeEdit API.
+	 */
+	static void MaxFishingEditorSculptGradedLakeBed(UWorld* World, AWaterBodyLake* Lake)
+	{
+		if (!World || !Lake || !Lake->Tags.Contains(MaxFishingWaterBootstrap::RuntimeWaterTag))
+		{
+			return;
+		}
+
+		static const FName SculptedTag(TEXT("MaxFishingLakeBedSculpted"));
+		static bool bLoggedOnce = false;
+		if (!bLoggedOnce)
+		{
+			bLoggedOnce = true;
+
+			const FVector LakeCenter = Lake->GetActorLocation();
+			const float SurfaceZ = LakeCenter.Z;
+			const FVector2D CenterXY(LakeCenter.X, LakeCenter.Y);
+			const FVector2D EdgeXY(CenterXY.X + DefaultLakeSplineRadiusCm * 0.98f, CenterXY.Y);
+
+			const TOptional<float> CenterLandZ = MaxFishingTryLandscapeSurfaceZ(World, CenterXY.X, CenterXY.Y);
+			const TOptional<float> EdgeLandZ = MaxFishingTryLandscapeSurfaceZ(World, EdgeXY.X, EdgeXY.Y);
+			const float CenterDepthBefore = CenterLandZ.IsSet() ? FMath::Max(0.f, SurfaceZ - CenterLandZ.GetValue()) : -1.f;
+			const float EdgeDepthBefore = EdgeLandZ.IsSet() ? FMath::Max(0.f, SurfaceZ - EdgeLandZ.GetValue()) : -1.f;
+
+			// #region agent log
+			{
+				const bool bHasSculptedTag = Lake->Tags.Contains(SculptedTag);
+				MaxFishingAppendAgentLog(
+					TEXT("H_S1"),
+					TEXT("MaxFishingWaterPlacement.cpp:MaxFishingEditorSculptGradedLakeBed(before)"),
+					TEXT("Call + pre-sculpt depth samples"),
+					FString::Printf(
+						TEXT("\"hasRuntimeTag\":1,\"hasSculptedTag\":%d,\"surfaceZ\":%.2f,\"centerDepthBeforeCm\":%.2f,\"edgeDepthBeforeCm\":%.2f"),
+						bHasSculptedTag ? 1 : 0,
+						SurfaceZ,
+						CenterDepthBefore,
+						EdgeDepthBefore),
+					TEXT("debug_sculpt_iter0"));
+			}
+			// #endregion
+
+			if (Lake->Tags.Contains(SculptedTag))
+			{
+				return;
+			}
+		}
+
+		if (Lake->Tags.Contains(SculptedTag))
+		{
+			return;
+		}
+
+		ALandscape* LandscapeActor = nullptr;
+		for (TActorIterator<ALandscape> It(World); It; ++It)
+		{
+			LandscapeActor = *It;
+			break;
+		}
+		if (!LandscapeActor)
+		{
+			return;
+		}
+
+		ULandscapeInfo* Info = LandscapeActor->GetLandscapeInfo();
+		if (!Info || Info->XYtoComponentMap.IsEmpty())
+		{
+			return;
+		}
+
+		const FVector LakeCenter = Lake->GetActorLocation();
+		const float SurfaceZ = LakeCenter.Z;
+		const float Radius = DefaultLakeSplineRadiusCm;
+		const FVector2D CenterXY(LakeCenter.X, LakeCenter.Y);
+
+		FLandscapeEditDataInterface LandscapeEdit(Info);
+		FLandscapeDoNotDirtyScope IgnorePackageDirty(LandscapeEdit, true);
+		LandscapeEdit.SetShouldDirtyPackage(false);
+
+		bool bAnyHeightChange = false;
+		int32 NumComponentsTouched = 0;
+
+		Info->ForAllLandscapeComponents(
+			[&](ULandscapeComponent* Comp)
+			{
+				if (!Comp)
+				{
+					return;
+				}
+
+				const FBox Bounds = Comp->Bounds.GetBox();
+				if ((Bounds.Max - Bounds.Min).SquaredLength() < KINDA_SMALL_NUMBER
+					|| !MaxFishingCircleOverlapsBoxXY(CenterXY, Radius + 256.f, Bounds))
+				{
+					return;
+				}
+
+				int32 X1 = Comp->GetSectionBase().X;
+				int32 Y1 = Comp->GetSectionBase().Y;
+				const int32 Quads = Comp->ComponentSizeQuads;
+				int32 X2 = X1 + Quads;
+				int32 Y2 = Y1 + Quads;
+				const int32 Stride = Quads + 1;
+
+				TArray<uint16> Data;
+				Data.SetNumUninitialized(Stride * Stride);
+				LandscapeEdit.GetHeightData(X1, Y1, X2, Y2, Data.GetData(), Stride);
+
+				FLandscapeComponentDataInterface CDI(Comp, 0, true);
+				const FTransform CompTM = Comp->GetComponentTransform();
+				bool bComponentChanged = false;
+
+				for (int32 Ly = 0; Ly <= Quads; ++Ly)
+				{
+					for (int32 Lx = 0; Lx <= Quads; ++Lx)
+					{
+						const int32 Idx = Lx + Ly * Stride;
+						const FVector WorldV = CDI.GetWorldVertex(Lx, Ly);
+
+						const float Dist2d = FVector::Dist2D(
+							FVector(WorldV.X, WorldV.Y, 0.f),
+							FVector(CenterXY.X, CenterXY.Y, 0.f));
+						if (Dist2d > Radius)
+						{
+							continue;
+						}
+
+						// Avoid sculpting at/above the surface plane.
+						if (WorldV.Z >= SurfaceZ - 1.5f)
+						{
+							continue;
+						}
+
+						const float T = FMath::Clamp(Dist2d / Radius, 0.f, 1.f);
+						const float SmoothT = T * T * (3.f - 2.f * T); // SmoothStep
+						const float DesiredDepth = FMath::Lerp(LakeCenterDepthCm, LakeShoreDepthCm, SmoothT);
+						const float TargetBedZ = SurfaceZ - DesiredDepth;
+
+						if (WorldV.Z > TargetBedZ)
+						{
+							const FVector LocalTarget = CompTM.InverseTransformPosition(FVector(WorldV.X, WorldV.Y, TargetBedZ));
+							Data[Idx] = LandscapeDataAccess::GetTexHeight(LocalTarget.Z);
+							bComponentChanged = true;
+						}
+					}
+				}
+
+				if (bComponentChanged)
+				{
+					LandscapeEdit.SetHeightData(
+						X1, Y1, X2, Y2,
+						Data.GetData(),
+						Stride,
+						true,
+						nullptr, nullptr, nullptr,
+						false,
+						nullptr, nullptr,
+						true, true, true);
+					bAnyHeightChange = true;
+					++NumComponentsTouched;
+
+					// Update collision so subsequent collision-traces / water depth queries
+					// observe the freshly edited heightmap this frame.
+					Comp->UpdateCollisionData(true);
+					Comp->UpdateCachedBounds();
+				}
+			});
+
+		LandscapeEdit.Flush();
+
+		if (bAnyHeightChange)
+		{
+			Lake->Tags.AddUnique(SculptedTag);
+		}
+
+		// #region agent log
+		{
+			const FVector LakeCenterAfter = Lake->GetActorLocation();
+			const float SurfaceZAfter = LakeCenterAfter.Z;
+			const FVector2D CenterXYAfter(LakeCenterAfter.X, LakeCenterAfter.Y);
+			const FVector2D EdgeXYAfter(CenterXYAfter.X + DefaultLakeSplineRadiusCm * 0.98f, CenterXYAfter.Y);
+
+			const TOptional<float> CenterLandZAfter = MaxFishingTryLandscapeSurfaceZ(World, CenterXYAfter.X, CenterXYAfter.Y);
+			const TOptional<float> EdgeLandZAfter = MaxFishingTryLandscapeSurfaceZ(World, EdgeXYAfter.X, EdgeXYAfter.Y);
+			const float CenterDepthAfter = CenterLandZAfter.IsSet() ? FMath::Max(0.f, SurfaceZAfter - CenterLandZAfter.GetValue()) : -1.f;
+			const float EdgeDepthAfter = EdgeLandZAfter.IsSet() ? FMath::Max(0.f, SurfaceZAfter - EdgeLandZAfter.GetValue()) : -1.f;
+
+			MaxFishingAppendAgentLog(
+				TEXT("H_S2"),
+				TEXT("MaxFishingWaterPlacement.cpp:MaxFishingEditorSculptGradedLakeBed(after)"),
+				TEXT("Sculpt result + post-sculpt depth samples"),
+				FString::Printf(
+					TEXT("\"bAnyHeightChange\":%d,\"numComponentsTouched\":%d,\"surfaceZ\":%.2f,\"centerDepthAfterCm\":%.2f,\"edgeDepthAfterCm\":%.2f"),
+					bAnyHeightChange ? 1 : 0,
+					NumComponentsTouched,
+					SurfaceZAfter,
+					CenterDepthAfter,
+					EdgeDepthAfter),
+				TEXT("debug_sculpt_iter0"));
+		}
+		// #endregion
+	}
+#endif // WITH_EDITOR
 
 	static void MaxFishingEnsureLakeRootMobility(UWaterBodyComponent* Body)
 	{
@@ -244,6 +522,34 @@ namespace
 			if (AWaterBodyLake* LakeActor = Cast<AWaterBodyLake>(*It))
 			{
 				MaxFishingAlignLakeActorZAboveLandscape(World, LakeActor);
+#if WITH_EDITOR
+				// #region agent log
+				{
+					static bool bLoggedRefreshOnce = false;
+					if (!bLoggedRefreshOnce)
+					{
+						bLoggedRefreshOnce = true;
+
+						static const FName SculptedTag(TEXT("MaxFishingLakeBedSculpted"));
+						const bool bHasRuntimeTag = LakeActor->Tags.Contains(MaxFishingWaterBootstrap::RuntimeWaterTag);
+						const bool bHasSculptedTag = LakeActor->Tags.Contains(SculptedTag);
+
+						MaxFishingAppendAgentLog(
+							TEXT("H_S0"),
+							TEXT("MaxFishingWaterPlacement.cpp:MaxFishingRefreshExistingWater(call)"),
+							TEXT("Whether sculpt entry conditions are met"),
+							FString::Printf(
+								TEXT("\"hasRuntimeTag\":%d,\"hasSculptedTag\":%d"),
+								bHasRuntimeTag ? 1 : 0,
+								bHasSculptedTag ? 1 : 0),
+							TEXT("debug_sculpt_iter0"));
+					}
+				}
+				// #endregion
+				// Sculpt the landscape bowl so depth varies from center (~6 ft) to shore (~2 ft).
+				// Editor/PIE only (requires LandscapeEdit API).
+				MaxFishingEditorSculptGradedLakeBed(World, LakeActor);
+#endif
 				MaxFishingApplyCalmGerstnerWavesToRuntimeLake(LakeActor);
 			}
 			if (UWaterBodyComponent* Body = It->GetWaterBodyComponent())
